@@ -62,7 +62,15 @@ for chapter_one_file in chapter_one_files:
                 classes = paragraph_element['class']
 
                 if len(classes) > 0:
-                    chapter_text += paragraph_element.get_text()
+                    strong_elements = paragraph_element.find_all("strong")
+                    for strong_element in strong_elements:
+                        superscripts = strong_element.findChildren("sup" , recursive=False)
+                        if len(superscripts) > 0:
+                            superscripts[0].string = "(" + strong_element.get_text().strip() + ") "
+                        elif strong_element.next_sibling is not None:
+                            if strong_element.next_sibling['id'].startswith('footnote'):
+                                strong_element.string = "(" + strong_element.get_text().strip() + ") "
+                    chapter_text += (paragraph_element.get_text().strip() + " ")
             sentences.append(chapter_text)
 
 def clean_string(unclean_string): 
@@ -76,9 +84,10 @@ def clean_string(unclean_string):
     for span in square_spans:
         clean_string += unclean_string[start:span[0] - 2]
         start = span[1]
+    clean_string += unclean_string[square_spans[-1][1]:]
     return clean_string
 
-with open(DATA_DIR+"eng.txt", "w+", encoding="utf-8") as english_file:
+with open(DATA_DIR+"english-chapters.txt", "w+", encoding="utf-8") as english_file:
     unclean_string = "\n".join(sentences)
     clean_string = clean_string(unclean_string)
     english_file.write(clean_string)

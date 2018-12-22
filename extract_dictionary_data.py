@@ -1,5 +1,4 @@
 import os
-import random
 import re
 from bs4 import BeautifulSoup
 
@@ -65,10 +64,10 @@ for file_name in all_files:
         get_both_english_and_igbo_words(igbo_words_elements)
 
 
-with open(DATA_DIR+"igbo_dict.txt", "w+", encoding="utf-8") as igbo_file:
+with open(DATA_DIR+"igbo-dictionary.txt", "w+", encoding="utf-8") as igbo_file:
     string = "\n".join(igbo_words)
     igbo_file.write(string)
 
-with open(DATA_DIR+"english_dict.txt", "w+", encoding="utf-8") as english_file:
+with open(DATA_DIR+"english-dictionary.txt", "w+", encoding="utf-8") as english_file:
     string = "\n".join(english_words)
     english_file.write(string)

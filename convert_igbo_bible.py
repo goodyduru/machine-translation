@@ -57,7 +57,15 @@ for chapter_one_file in chapter_one_files:
                 classes = paragraph_element['class']
 
                 if len(classes) > 0:
-                    chapter_text += paragraph_element.get_text()
+                    strong_elements = paragraph_element.find_all("strong")
+                    for strong_element in strong_elements:
+                        superscripts = strong_element.findChildren("sup" , recursive=False)
+                        if len(superscripts) > 0:
+                            superscripts[0].string = "(" + strong_element.get_text().strip() + ") "
+                        elif strong_element.next_sibling is not None:
+                            if strong_element.next_sibling['id'].startswith('footnote'):
+                                strong_element.string = "(" + strong_element.get_text().strip() + ") "
+                    chapter_text += (paragraph_element.get_text().strip() + " ")
             sentences.append(chapter_text)
 
 
@@ -78,11 +86,13 @@ def clean_string(unclean_string):
         no_hebrew_string += unclean_string[start:span[0] - 2]
         start = span[1]
     no_hebrew_string += unclean_string[square_spans[-1][1]:]
-    clean_string = re.sub('\[.*\]', "", no_hebrew_string)
+    no_hebrew_string = re.sub('(\[\?\])', "", no_hebrew_string)
+    clean_string = no_hebrew_string.replace("[Ntụaka ala peeji]", "")
+    
     return clean_string
     
 
-with open(DATA_DIR+"igbo.txt", "w+", encoding="utf-8") as igbo_file:
+with open(DATA_DIR+"igbo-chapters.txt", "w+", encoding="utf-8") as igbo_file:
     unclean_string = "\n".join(sentences)
     clean_string = clean_string(unclean_string)
     igbo_file.write(clean_string)
