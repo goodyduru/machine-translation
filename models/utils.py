@@ -3,15 +3,22 @@ import numpy as np
 from keras.utils import to_categorical
 import string
 import re
-from unicodedata import normalize
+import unicodedata
+
+def unicode_to_ascii(w):
+    return ''.join([c for c in unicodedata.normalize('NFD', w) if unicodedata.category(c) != 'Mn'])
 
 #clean and normalize string
-def clean_lines(lines):
+def clean_lines(lines, to_ascii=False):
     cleaned = list()
     for line in lines:
-        line = normalize('NFKD', line).encode('utf-8', 'ignore')
-        line = line.decode('utf-8')
-        #tokenize on white space
+        if to_ascii:
+            line = unicode_to_ascii(line.strip())
+        line = re.sub(r"([?.!,¿])", r" \1 ", line)
+        line = re.sub(r'[" "]+', " ", line)
+        line = re.sub(r"[^a-zA-Z1-9?.!,¿]+", " ", line)
+        line = line.rstrip().strip()
+        line = "\t " + line + " \n"
         cleaned.append(line)
     return cleaned
 
@@ -88,7 +95,6 @@ def decode_sequence(input_seq, encoder_model, num_decoder_tokens, igbo_vocab, de
     return decoded_sentence
 
 def get_short_sentences(dataset, Tx, Ty):
-    dataset['ig'] = dataset['ig'].apply(lambda x: '\t' + x + '\n')
     english_text = dataset['en'].tolist()
     igbo_text = dataset['ig'].tolist()
     short_english_text = []
