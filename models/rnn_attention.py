@@ -1,6 +1,7 @@
 from keras import regularizers, activations, constraints, initializers
 from keras.layers.recurrent import Recurrent
-from keras.layers import TimeDistributed, LSTM, Bidirectional
+from keras.layers import TimeDistributed, LSTM, Bidirectional, Input
+from keras.models import Model
 from keras.optimizers import Adam
 from keras.engine import InputSpec
 import keras.backend as K
@@ -242,12 +243,12 @@ class AttentionLayer(Recurrent):
         y_prev, s_prev = states
         s_all = K.repeat(s_prev, self.timesteps)
         Wa_s_all = K.dot(s_all, self.W_a)
-        e_ij = K.dot(activations.tanh(Wa_s_all + self.uh), K.expand_dims(self.V_a))
-        d_ij = K.sum(K.exp(e_ij), axis=1)
-        d_ij_repeat = K.repeat(d_ij, self.timesteps)
-        a_current = d_ij / d_ij_repeat #shape batch_size, timestep, 1
+        et = K.dot(activations.tanh(Wa_s_all + self.uh), K.expand_dims(self.V_a))
+        #et_sum = K.sum(K.exp(et), axis=1)
+        #et_sum_repeated = K.repeat(et_sum, self.timesteps)
+        #a_current = et_sum / et_sum_repeated #shape batch_size, timestep, 1
+        a_current = activations.softmax(et)
         context = K.squeeze(K.batch_dot(a_current, self.x_seq, axes=1), axis=1)
-
         #calculate reset gate
         r_current = activations.sigmoid(K.dot(y_prev, self.W_r)
                                  + K.dot(s_prev, self.U_r) 
@@ -297,3 +298,14 @@ class AttentionLayer(Recurrent):
         
         base_config = super(AttentionLayer, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+def custom_model(num_encoder_tokens, num_decoder_tokens, lstm_dim, timesteps):
+    input_layer = Input(shape=(timesteps, num_encoder_tokens))
+    encoder_lstm = Bidirectional(LSTM(lstm_dim, return_sequences=True))
+    enc = encoder_lstm(input_layer)
+
+    attention_decoder = AttentionLayer(lstm_dim, num_decoder_tokens, name='attention')
+    outputs = attention_decoder(enc)
+
+    model = Model(inputs=input_layer, outputs=outputs)
+    return model
