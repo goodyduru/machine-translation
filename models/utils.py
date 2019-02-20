@@ -4,6 +4,7 @@ from keras.utils import to_categorical
 import string
 import re
 import unicodedata
+from keras.preprocessing.text import Tokenizer
 
 def unicode_to_ascii(w):
     return ''.join([c for c in unicodedata.normalize('NFD', w) if unicodedata.category(c) != 'Mn'])
