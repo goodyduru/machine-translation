@@ -7,8 +7,8 @@ import tensorflow as tf
 class Attention(Layer):
     """Attention Layer"""
 
-    def __init__(self, output_dim, num_heads, 
-                dropout=0.,
+    def __init__(self, output_dim: int, num_heads: int, 
+                dropout: float=0.,
                 activation=None,
                 kernel_initializer='glorot_uniform',
                 bias_initializer='zeros',
@@ -125,7 +125,7 @@ class Attention(Layer):
         q = self.split_heads(q)
         k = self.split_heads(k)
         v = self.split_heads(v)
-        
+
         depth = self.output_dim // self.num_heads
         q *= depth ** -0.5
         k = K.permute_dimensions(k, (0, 1, 3, 2))
