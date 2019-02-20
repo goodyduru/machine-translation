@@ -1,14 +1,15 @@
-from keras.layers import Layer, Dropout
+from keras.layers import Layer, Dropout, Concatenate
 from keras import activations, initializers, regularizers, constraints
 from keras.engine import InputSpec
 import keras.backend as K
 import tensorflow as tf
 
-class Attention(Layer):
+class BaseMultiHeadAttention(Layer):
     """Attention Layer"""
 
     def __init__(self, output_dim: int, num_heads: int, 
-                dropout: float=0.,
+                use_masking: bool,
+                dropout: float=0.0,
                 activation=None,
                 kernel_initializer='glorot_uniform',
                 bias_initializer='zeros',
@@ -21,7 +22,7 @@ class Attention(Layer):
                 ):
         if output_dim % num_heads != 0:
             raise ValueError("Hidden size must be evenly divisible by num of heads")
-        super(Attention, self).__init__(**kwargs)
+        super(BaseMultiHeadAttention, self).__init__(**kwargs)
         self.output_dim = output_dim
         self.num_heads = num_heads
         self.dropout = dropout
@@ -35,8 +36,15 @@ class Attention(Layer):
         self.bias_constraint = constraints.get(bias_constraint)
 
     def build(self, input_shape):
-        self.batch_size, self.timesteps, self.input_dim = input_shape
-        depth = (self.output_dim//self.num_heads)
+        if not (isinstance(input_shape, list) and len(input_shape) == 2):
+            raise ValueError(
+                'You must call this layer passing a list of two tensors'
+                '(for keys/values and queries)')
+        if input_shape[0][-1] != input_shape[1][-1]:
+            raise ValueError(
+                'The inputs and outputs must be the same dimensionality' 
+            )
+        self.batch_size, self.timesteps, self.input_dim = input_shape[0]
         self.W_q = self.add_weight(shape=(self.input_dim, self.output_dim),
                                     name='W_q',
                                     initializer=self.kernel_initializer,
@@ -85,13 +93,7 @@ class Attention(Layer):
                                     regularizer=self.bias_regularizer,
                                     constraint=self.bias_constraint)
 
-        self.bias = self.add_weight(shape=(self.timesteps,),
-                                    name='bias',
-                                    initializer=self.bias_initializer,
-                                    regularizer=self.bias_regularizer,
-                                    constraint=self.bias_constraint)
-
-        self.input_spec = InputSpec(min_ndim=3, axes={-1: self.input_dim})
+        self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim}), InputSpec(min_ndim=3, axes={-1: self.input_dim})]
         self.built = True
 
     def split_heads(self, x):
@@ -101,8 +103,11 @@ class Attention(Layer):
         Returns:
             output: tensor with shape [batch_size, num_heads, timesteps, output_dim/num_heads]
         """
+        batch_size = K.shape(x)[0]
+        length = K.shape(x)[1]
         depth = self.output_dim // self.num_heads
-        x = K.reshape(x, (-1, self.timesteps, self.num_heads, depth))
+
+        x = K.reshape(x, (batch_size, length, self.num_heads, depth))
         output = K.permute_dimensions(x, [0, 2, 1, 3])
         return output
 
@@ -113,14 +118,21 @@ class Attention(Layer):
         Returns:
             output: tensor with shape [batch_size, timesteps, output_dim]
         """
+        batch_size = K.shape(x)[0]
+        length = K.shape(x)[2]
         x = K.permute_dimensions(x, [0, 2, 1, 3])
-        output = K.reshape(x, (-1, self.timesteps, self.output_dim))
+        output = K.reshape(x, (batch_size, length, self.output_dim))
         return output
 
-    def call(self, x, training=None):
+    def call(self, input_tensor, training=None):
+        if not (isinstance(input_tensor, list) and len(input_tensor) == 2):
+            raise ValueError(
+                'You must call this layer passing a list of two tensors'
+                '(for keys/values and queries)')
+        x, y = input_tensor
         q = K.dot(x, self.W_q) + self.b_q
-        k = K.dot(x, self.W_k) + self.b_q
-        v = K.dot(x, self.W_v) + self.b_v
+        k = K.dot(y, self.W_k) + self.b_q
+        v = K.dot(y, self.W_v) + self.b_v
 
         q = self.split_heads(q)
         k = self.split_heads(k)
@@ -130,7 +142,6 @@ class Attention(Layer):
         q *= depth ** -0.5
         k = K.permute_dimensions(k, (0, 1, 3, 2))
         logits = K.batch_dot(q, k)
-        logits += self.bias
         weights = K.softmax(logits)
 
         if 0. < self.dropout < 1.:
@@ -153,8 +164,45 @@ class Attention(Layer):
             'num_heads': self.num_heads,
             'output_dim': self.output_dim
         }
-        base_config = super(Attention, self).get_config()
+        base_config = super(BaseMultiHeadAttention, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+class MultiHeadAttention(BaseMultiHeadAttention):
+    def __init__(self, output_dim: int, num_heads: int, 
+                use_masking: bool, **kwargs):
+        super(MultiHeadAttention, self).__init__(output_dim, num_heads, use_masking, **kwargs)
+
+    def build(self, input_shape):
+        print(input_shape)
+        super(MultiHeadAttention, self).build(input_shape)
+
+    def call(self, x):
+        return super(MultiHeadAttention, self).call(x)
+
+    def compute_output_shape(self, input_shape):
+        return super(MultiHeadAttention, self).compute_output_shape(input_shape)
+
+    def get_config(self):
+        return super(MultiHeadAttention, self).get_config()
+
+class MultiHeadSelfAttention(BaseMultiHeadAttention):
+    def __init__(self, output_dim: int, num_heads: int, 
+                use_masking: bool, **kwargs):
+        super(MultiHeadSelfAttention, self).__init__(output_dim, num_heads, use_masking, **kwargs)
+
+    def build(self, input_shape):
+        self.input_dim = input_shape[-1]
+        super(MultiHeadSelfAttention, self).build([input_shape, input_shape])
+        self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim})]
+
+    def call(self, x):
+        return super(MultiHeadSelfAttention, self).call([x, x])
+
+    def compute_output_shape(self, input_shape):
+        return super(MultiHeadSelfAttention, self).compute_output_shape([input_shape, input_shape])
+
+    def get_config(self):
+        return super(MultiHeadSelfAttention, self).get_config()
 
 if __name__ == "__main__":
     from keras.layers import Input, LSTM
@@ -162,6 +210,7 @@ if __name__ == "__main__":
     from keras.layers.wrappers import Bidirectional
     i = Input(shape=(100,104), dtype='float32')
     enc = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(i)
-    dec = Attention(32, 4, 0.1)(enc)
+    enc_2 = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(enc)
+    dec = MultiHeadAttention(32, 4, False, dropout=0.1)([enc, enc_2])
     model = Model(inputs=i, outputs=dec)
     print(model.summary())

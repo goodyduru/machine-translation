@@ -44,6 +44,18 @@ class PositionEncoding(Layer):
     def call(self, x):
         return x + self.signal
 
+    def compute_output_shape(self, input_shape):
+        _, timesteps, hidden_size = input_shape
+        return (None, timesteps, hidden_size)
+
+    def get_config(self):
+        config = {
+            'min_timescale': self.min_timescale,
+            'max_timescale': self.max_timescale
+        }
+        base_config = super(PositionEncoding, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
 if __name__ == "__main__":
     from keras.layers import Input, LSTM
     from keras.models import Model
