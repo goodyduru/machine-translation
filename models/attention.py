@@ -9,7 +9,7 @@ class BaseMultiHeadAttention(Layer):
 
     def __init__(self, output_dim: int, num_heads: int, 
                 use_masking: bool,
-                dropout: float=0.0,
+                dropout: float=0.1,
                 activation=None,
                 kernel_initializer='glorot_uniform',
                 bias_initializer='zeros',
@@ -36,9 +36,9 @@ class BaseMultiHeadAttention(Layer):
         self.bias_constraint = constraints.get(bias_constraint)
 
     def build(self, input_shape):
-        if not (isinstance(input_shape, list) and len(input_shape) == 2):
+        if not (isinstance(input_shape, list) and ( len(input_shape)  == 2 or len(input_shape) == 3 )):
             raise ValueError(
-                'You must call this layer passing a list of two tensors'
+                'You must call this layer passing a list of two or three tensors'
                 '(for keys/values and queries)')
         if input_shape[0][-1] != input_shape[1][-1]:
             raise ValueError(
@@ -92,8 +92,10 @@ class BaseMultiHeadAttention(Layer):
                                     initializer=self.bias_initializer,
                                     regularizer=self.bias_regularizer,
                                     constraint=self.bias_constraint)
-
-        self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim}), InputSpec(min_ndim=3, axes={-1: self.input_dim})]
+        if len(input_shape) == 2:
+            self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim}), InputSpec(min_ndim=3, axes={-1: self.input_dim})]
+        else:
+            self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim}), InputSpec(min_ndim=3, axes={-1: self.input_dim}), InputSpec(min_ndim=4, axes={-1: input_shape[2][-1]})]
         self.built = True
 
     def split_heads(self, x):
@@ -125,11 +127,15 @@ class BaseMultiHeadAttention(Layer):
         return output
 
     def call(self, input_tensor, training=None):
-        if not (isinstance(input_tensor, list) and len(input_tensor) == 2):
+        if not (isinstance(input_tensor, list) and ( len(input_tensor)  == 2 or len(input_tensor) == 3 )):
             raise ValueError(
-                'You must call this layer passing a list of two tensors'
+                'You must call this layer passing a list of two or three tensors'
                 '(for keys/values and queries)')
-        x, y = input_tensor
+        if len(input_tensor) == 2:
+            x, y = input_tensor
+            bias = None
+        else:
+            x, y, bias = input_tensor
         q = K.dot(x, self.W_q) + self.b_q
         k = K.dot(y, self.W_k) + self.b_q
         v = K.dot(y, self.W_v) + self.b_v
@@ -142,6 +148,8 @@ class BaseMultiHeadAttention(Layer):
         q *= depth ** -0.5
         k = K.permute_dimensions(k, (0, 1, 3, 2))
         logits = K.batch_dot(q, k)
+        if bias is not None:
+            logits += bias
         weights = K.softmax(logits)
 
         if 0. < self.dropout < 1.:
@@ -191,12 +199,20 @@ class MultiHeadSelfAttention(BaseMultiHeadAttention):
         super(MultiHeadSelfAttention, self).__init__(output_dim, num_heads, use_masking, **kwargs)
 
     def build(self, input_shape):
-        self.input_dim = input_shape[-1]
-        super(MultiHeadSelfAttention, self).build([input_shape, input_shape])
-        self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim})]
+        if isinstance(input_shape, list):
+            _, self.length, self.input_dim = input_shape[0]
+            super(MultiHeadSelfAttention, self).build([input_shape[0], input_shape[0], input_shape[1]])
+            self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim}), InputSpec(min_ndim=3, axes={-1: self.length})]
+        else:
+            self.input_dim = input_shape[-1]
+            super(MultiHeadSelfAttention, self).build([input_shape, input_shape])
+            self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim})]
 
     def call(self, x):
-        return super(MultiHeadSelfAttention, self).call([x, x])
+        if isinstance(x, list):
+            return super(MultiHeadSelfAttention, self).call([x[0], x[0], x[1]])
+        else:
+            return super(MultiHeadSelfAttention, self).call([x, x])
 
     def compute_output_shape(self, input_shape):
         return super(MultiHeadSelfAttention, self).compute_output_shape([input_shape, input_shape])
@@ -205,12 +221,18 @@ class MultiHeadSelfAttention(BaseMultiHeadAttention):
         return super(MultiHeadSelfAttention, self).get_config()
 
 if __name__ == "__main__":
-    from keras.layers import Input, LSTM
+    from keras.layers import Input, LSTM, Embedding
     from keras.models import Model
     from keras.layers.wrappers import Bidirectional
-    i = Input(shape=(100,104), dtype='float32')
-    enc = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(i)
-    enc_2 = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(enc)
-    dec = MultiHeadAttention(32, 4, False, dropout=0.1)([enc, enc_2])
-    model = Model(inputs=i, outputs=dec)
+    from masking import Masking
+    inp = Input(shape=(100,), dtype='float32')
+    out = Input(shape=(125,), dtype='float32')
+    masking = Masking()(inp)
+    emb = Embedding(1000, 64)
+    i = emb(inp)
+    d = emb(out)
+    encode = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(i)
+    decode = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(d)
+    dec = MultiHeadAttention(32, 4, False, dropout=0.1)([encode, decode, masking])
+    model = Model(inputs=[inp, out], outputs=dec)
     print(model.summary())
