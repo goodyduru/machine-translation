@@ -1,5 +1,19 @@
 import keras.backend as K 
+from keras.engine import InputSpec
 from keras.layers import Layer, Embedding
+
+class PadDecoder(Layer):
+    def __init__(self, **kwargs):
+        super(PadDecoder, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.batch_size, self.length, self.hidden_size = input_shape
+        self.input_spec = InputSpec(min_ndim=3, axes={-1: self.hidden_size})
+        self.built = True
+
+    def call(self, x):
+        x = K.temporal_padding(x[:, :-1, :], (1, 0))
+        return x
 
 
 class LayerNormalization(Layer):
@@ -39,7 +53,8 @@ if __name__ == "__main__":
     from keras.layers.wrappers import Bidirectional
     inp = Input(shape=(100,), dtype='float32')
     emb = Embeddings(1000, 64)(inp)
-    encode = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(emb)
+    pad = PadDecoder()(emb)
+    encode = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(pad)
     dec = LayerNormalization()(encode)
     model = Model(inputs=inp, outputs=dec)
     print(model.summary())

@@ -8,7 +8,6 @@ class BaseMultiHeadAttention(Layer):
     """Attention Layer"""
 
     def __init__(self, output_dim: int, num_heads: int, 
-                use_masking: bool,
                 dropout: float=0.1,
                 activation=None,
                 kernel_initializer='glorot_uniform',
@@ -177,8 +176,8 @@ class BaseMultiHeadAttention(Layer):
 
 class MultiHeadAttention(BaseMultiHeadAttention):
     def __init__(self, output_dim: int, num_heads: int, 
-                use_masking: bool, **kwargs):
-        super(MultiHeadAttention, self).__init__(output_dim, num_heads, use_masking, **kwargs)
+                **kwargs):
+        super(MultiHeadAttention, self).__init__(output_dim, num_heads, **kwargs)
 
     def build(self, input_shape):
         print(input_shape)
@@ -195,8 +194,8 @@ class MultiHeadAttention(BaseMultiHeadAttention):
 
 class MultiHeadSelfAttention(BaseMultiHeadAttention):
     def __init__(self, output_dim: int, num_heads: int, 
-                use_masking: bool, **kwargs):
-        super(MultiHeadSelfAttention, self).__init__(output_dim, num_heads, use_masking, **kwargs)
+                **kwargs):
+        super(MultiHeadSelfAttention, self).__init__(output_dim, num_heads, **kwargs)
 
     def build(self, input_shape):
         if isinstance(input_shape, list):
@@ -233,6 +232,6 @@ if __name__ == "__main__":
     d = emb(out)
     encode = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(i)
     decode = Bidirectional(LSTM(64, return_sequences=True), merge_mode='concat')(d)
-    dec = MultiHeadAttention(32, 4, False, dropout=0.1)([encode, decode, masking])
+    dec = MultiHeadAttention(32, 4, dropout=0.1)([decode, encode, masking])
     model = Model(inputs=[inp, out], outputs=dec)
     print(model.summary())
