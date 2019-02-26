@@ -1,7 +1,9 @@
-from keras.layers import Dropout, Add, Input
+from keras.layers import Dropout, Add, Input, Dense
+from keras.layers import Activation, Lambda, TimeDistributed
 from keras.models import Model
+import keras.backend as K
 from attention import MultiHeadAttention, MultiHeadSelfAttention
-from extras import LayerNormalization, Embeddings, PadDecoder
+from extras import LayerNormalization, Embeddings
 from ffn import FeedForwardNetwork, Padding
 from masking import Masking
 from position import PositionEncoding
@@ -24,6 +26,32 @@ def feedforward_sub_layer(x, name, pad=None, size=256, dropout=0.1):
     out = Dropout(dropout)(out)
     return Add()([x, out])
 
+class Encoder():
+    def __init__(self, emb, mask, pad, pos, num_layers=6, num_heads=8, model_size=256, dropout=0.1):
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+        self.model_size = model_size
+        self.dropout = dropout
+        self.emb = emb
+        self.mask = mask
+        self.pad = pad
+        self.pos = pos
+
+    def __call__(self, x):
+        source_pad = self.pad(x)
+        source_mask = self.mask(x)
+        x = self.emb(x)
+        x = self.pos(x)
+        x = Dropout(self.dropout)(x)
+        for i in range(self.num_layers):
+            attention_name = 'encoder_attention_' + str(i + 1)
+            ffn_name = 'encoder_ffn_' + str(i + 1)
+            x = attention_sub_layer(x, source_mask, attention_name, self.num_heads, self.model_size, self.dropout)
+            x = feedforward_sub_layer(x, ffn_name, source_pad, self.model_size, self.dropout)
+
+        out = LayerNormalization(name='encoder')(x)
+        return out
+
 def encoder(x, pad, mask, num_layers=6, num_heads=8, size=256, dropout=0.1):
     for i in range(num_layers):
         attention_name = 'encoder_attention_' + str(i + 1)
@@ -31,7 +59,7 @@ def encoder(x, pad, mask, num_layers=6, num_heads=8, size=256, dropout=0.1):
         x = attention_sub_layer(x, mask, attention_name, num_heads, size, dropout)
         x = feedforward_sub_layer(x, ffn_name, pad, size, dropout)
 
-    out = LayerNormalization()(x)
+    out = LayerNormalization(name='encoder')(x)
     return out
 
 def decoder(x, encoder_outputs, mask, decoder_mask, num_layers=6, num_heads=8, size=256, dropout=0.1):
@@ -44,6 +72,11 @@ def decoder(x, encoder_outputs, mask, decoder_mask, num_layers=6, num_heads=8, s
         x = feedforward_sub_layer(x, ffn_name, size=size, dropout=dropout)
     out = LayerNormalization()(x)
     return out
+
+class Transformer():
+    def __init__(self, input_tokens, output_tokens, model_size, num_layers, num_heads, dropout=0.1):
+        pass
+
     
 def transformer(source_length, target_length, source_vocab, target_vocab, model_size, num_layers, num_heads, dropout):
     source = Input(shape=(source_length,))
@@ -57,12 +90,14 @@ def transformer(source_length, target_length, source_vocab, target_vocab, model_
     target = Input(shape=(target_length,))
     target_mask = Masking(decoder_mask=True)(target)
     target_embedding = Embeddings(target_vocab, model_size)(target)
-    target_embedding = PadDecoder()(target_embedding)
+    target_embedding = Lambda(lambda x: K.temporal_padding(x[:, :-1, :], (1, 0)))(target_embedding)
     decoder_inputs = PositionEncoding()(target_embedding)
     decoder_inputs = Dropout(dropout)(decoder_inputs)
     decoder_output = decoder(decoder_inputs, encoder_output, source_mask, target_mask, num_layers, num_heads, model_size, dropout)
 
-    model = Model(inputs=[source, target], outputs=decoder_output)
+    output = TimeDistributed(Dense(target_vocab, name='decoder', activation='softmax'))(decoder_output)
+
+    model = Model(inputs=[source, target], outputs=output)
     return model
 
 if __name__ == "__main__":
