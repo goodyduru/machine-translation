@@ -111,9 +111,9 @@ class FeedForwardNetwork(Layer):
 
             # Reshape x to [batch_size*length, hidden_size] to remove padding
             x = K.reshape(x, (-1, self.hidden_size))
-            x = K.gather(x, indices=nonpad_ids)
+            x = K.tf.gather_nd(x, indices=nonpad_ids)
             # Reshape to 3 dimensions
-            x = K.squeeze(x, axis=1)
+            #x = K.squeeze(x, axis=1)
             x.set_shape((None, self.hidden_size))
             x = K.expand_dims(x, axis=0)
         output = K.dot(x, self.filter_weight) + self.filter_bias

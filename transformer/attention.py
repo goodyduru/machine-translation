@@ -48,12 +48,6 @@ class BaseMultiHeadAttention(Layer):
                                     initializer=self.kernel_initializer,
                                     regularizer=self.kernel_regularizer,
                                     constraint=self.kernel_constraint)
-        
-        self.b_q = self.add_weight(shape=(self.output_dim,),
-                                    name='b_q',
-                                    initializer=self.bias_initializer,
-                                    regularizer=self.bias_regularizer,
-                                    constraint=self.bias_constraint)
 
         self.W_k = self.add_weight(shape=(self.input_dim, self.output_dim),
                                     name='W_k',
@@ -61,35 +55,17 @@ class BaseMultiHeadAttention(Layer):
                                     regularizer=self.kernel_regularizer,
                                     constraint=self.kernel_constraint)
 
-        self.b_k = self.add_weight(shape=(self.output_dim,),
-                                    name='b_k',
-                                    initializer=self.bias_initializer,
-                                    regularizer=self.bias_regularizer,
-                                    constraint=self.bias_constraint)
-
         self.W_v = self.add_weight(shape=(self.input_dim, self.output_dim),
                                     name='W_v',
                                     initializer=self.kernel_initializer,
                                     regularizer=self.kernel_regularizer,
                                     constraint=self.kernel_constraint)
 
-        self.b_v = self.add_weight(shape=(self.output_dim,),
-                                    name='b_v',
-                                    initializer=self.bias_initializer,
-                                    regularizer=self.bias_regularizer,
-                                    constraint=self.bias_constraint)
-
         self.W_o = self.add_weight(shape=(self.output_dim, self.output_dim),
                                     name='W_o',
                                     initializer=self.kernel_initializer,
                                     regularizer=self.kernel_regularizer,
                                     constraint=self.kernel_constraint)
-
-        self.b_o = self.add_weight(shape=(self.output_dim,),
-                                    name='b_o',
-                                    initializer=self.bias_initializer,
-                                    regularizer=self.bias_regularizer,
-                                    constraint=self.bias_constraint)
         if len(input_shape) == 2:
             self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim}), InputSpec(min_ndim=3, axes={-1: self.input_dim})]
         else:
@@ -135,9 +111,9 @@ class BaseMultiHeadAttention(Layer):
             bias = None
         else:
             x, y, bias = input_tensor
-        q = K.dot(x, self.W_q) + self.b_q
-        k = K.dot(y, self.W_k) + self.b_k
-        v = K.dot(y, self.W_v) + self.b_v
+        q = K.dot(x, self.W_q)
+        k = K.dot(y, self.W_k)
+        v = K.dot(y, self.W_v)
 
         q = self.split_heads(q)
         k = self.split_heads(k)
@@ -157,10 +133,9 @@ class BaseMultiHeadAttention(Layer):
             weights = K.in_train_phase(weights, dropped_inputs, training)
         
         attention_output = K.batch_dot(weights, v)
-
         #Recombine head
         attention_output = self.combine_heads(attention_output)
-        output = K.dot(attention_output, self.W_o) + self.b_o
+        output = K.dot(attention_output, self.W_o)
         return output
 
     def compute_output_shape(self, input_shape):
