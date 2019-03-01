@@ -1,5 +1,5 @@
 import keras.backend as K 
-from keras import initializers, regularizers, constraints
+from keras import initializers, regularizers, constraints, activations
 from keras.layers import Layer, Dense
 from keras.engine import InputSpec
 
@@ -48,6 +48,7 @@ class FeedForwardNetwork(Layer):
         self.activity_regularizer = regularizers.get(activity_regularizer)
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
+        self.activation = activations.get('relu')
 
     def build(self, input_shape):
         if self.allow_pad and not (isinstance(input_shape, list) and ( len(input_shape)  == 2 )):
@@ -116,7 +117,7 @@ class FeedForwardNetwork(Layer):
             x.set_shape((None, self.hidden_size))
             x = K.expand_dims(x, axis=0)
         output = K.dot(x, self.filter_weight) + self.filter_bias
-        
+        output = self.activation(output)
         if 0. < self.relu_dropout < 1.:
             def dropped_inputs():
                 return K.dropout(output, self.relu_dropout)
