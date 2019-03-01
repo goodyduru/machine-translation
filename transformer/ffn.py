@@ -2,7 +2,6 @@ import keras.backend as K
 from keras import initializers, regularizers, constraints
 from keras.layers import Layer, Dense
 from keras.engine import InputSpec
-import tensorflow as tf
 
 class Padding(Layer):
     def __init__(self, padding: int=0, **kwargs):
@@ -101,6 +100,7 @@ class FeedForwardNetwork(Layer):
             x, padding = input_tensor, None
         
         batch_size = K.shape(x)[0]
+        length = K.shape(x)[1]
         padding = None if not self.allow_pad else padding
 
         if padding is not None:
@@ -128,9 +128,9 @@ class FeedForwardNetwork(Layer):
             output = K.tf.scatter_nd(
                 indices = nonpad_ids,
                 updates = output,
-                shape=[batch_size*self.length, self.hidden_size]
+                shape=[batch_size*length, self.hidden_size]
             )
-            output = K.reshape(output, (batch_size, self.length, self.hidden_size))
+            output = K.reshape(output, (batch_size, length, self.hidden_size))
         return output
 
     def compute_output_shape(self, input_shape):

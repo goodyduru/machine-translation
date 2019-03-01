@@ -1,12 +1,13 @@
-from keras.layers import Dropout, Add, Input, Dense
+from keras.layers import Dropout, Add, Input, Dense, Embedding
 from keras.layers import Activation, Lambda, TimeDistributed
 from keras.models import Model
 import keras.backend as K
-from attention import MultiHeadAttention, MultiHeadSelfAttention
-from extras import LayerNormalization, Embeddings
-from ffn import FeedForwardNetwork, Padding
-from masking import Masking
-from position import PositionEncoding
+import numpy as np
+from .attention import MultiHeadAttention, MultiHeadSelfAttention
+from .extras import LayerNormalization, Embeddings
+from .ffn import FeedForwardNetwork, Padding
+from .masking import Masking
+from .position import PositionEncoding
 
 class EncoderLayer:
     """ A single encoder layer made up of a self attention layer and a feed 
@@ -97,36 +98,7 @@ class EncoderStack():
         for encoder in self.encoders:
             x = encoder(x, source_mask, source_pad)
         out = self.output_normalization(x)
-        return out
-    
-
-def attention_sub_layer(x, mask, name, num_heads=8, size=256, dropout=0.1, memory=None):
-    out = LayerNormalization()(x)
-    if memory is None:
-        out = MultiHeadSelfAttention(output_dim=size, num_heads=num_heads, dropout=dropout, name=name)([out, mask])
-    else:
-        out = MultiHeadAttention(output_dim=size, num_heads=num_heads, dropout=dropout, name=name)([out, memory, mask])
-    out = Dropout(dropout)(out)
-    return Add()([x, out])
-
-def feedforward_sub_layer(x, name, pad=None, size=256, dropout=0.1):
-    out = LayerNormalization()(x)
-    if pad is not None:
-        out = FeedForwardNetwork(size, relu_dropout=dropout, allow_pad=True, name=name)([x, pad])
-    else:
-        out = FeedForwardNetwork(size, relu_dropout=dropout, allow_pad=False, name=name)(x)
-    out = Dropout(dropout)(out)
-    return Add()([x, out])
-
-def encoder(x, pad, mask, num_layers=6, num_heads=8, size=256, dropout=0.1):
-    for i in range(num_layers):
-        attention_name = 'encoder_attention_' + str(i + 1)
-        ffn_name = 'encoder_ffn_' + str(i + 1)
-        x = attention_sub_layer(x, mask, attention_name, num_heads, size, dropout)
-        x = feedforward_sub_layer(x, ffn_name, pad, size, dropout)
-
-    out = LayerNormalization(name='encoder')(x)
-    return out
+        return out    
 
 class DecoderLayer():
     """ A single decoder layer made up of a self attention layer, an encoder 
@@ -152,7 +124,7 @@ class DecoderLayer():
 
         #Normalization
         self.self_attention_norm = LayerNormalization()
-        self.attention_norm = LayerNormalization
+        self.attention_norm = LayerNormalization()
         self.ffn_norm = LayerNormalization()
 
         #Layers
@@ -186,7 +158,7 @@ class DecoderLayer():
 
         #Start Feed Forward Network
         ffn_out = self.ffn_norm(ffn_in)
-        ffn_out = self.ffn_layer([ffn_out])
+        ffn_out = self.ffn_layer(ffn_out)
         ffn_out = Dropout(self.dropout)(ffn_out)
         ffn_out = Add()([ffn_in, ffn_out])
         return ffn_out
@@ -239,28 +211,16 @@ class DecoderStack():
         out = self.output_normalization(x)
         return out
 
-def decoder(x, encoder_outputs, mask, decoder_mask, num_layers=6, num_heads=8, size=256, dropout=0.1):
-    for i in range(num_layers):
-        attention_name = 'decoder_attention_' + str(i + 1)
-        enc_dec_name = 'encoder_decoder_attention_' + str(i + 1)
-        ffn_name = 'decoder_ffn_' + str(i + 1)
-        x = attention_sub_layer(x, decoder_mask, attention_name, size=size, dropout=dropout)
-        x = attention_sub_layer(x, mask, enc_dec_name, size=size, dropout=dropout, memory=encoder_outputs)
-        x = feedforward_sub_layer(x, ffn_name, size=size, dropout=dropout)
-    out = LayerNormalization()(x)
-    return out
-
 class Transformer():
-    def __init__(self, source_tokens, target_tokens, source_len, target_len, model_size, ffn_size, num_layers, num_heads, dropout=0.1):
+    def __init__(self, source_tokens, target_tokens, model_size, ffn_size, num_layers, num_heads, dropout=0.1):
         self.source_tokens = source_tokens
         self.target_tokens = target_tokens
-        self.source_len = source_len
-        self.target_len = target_len
         self.model_size = model_size
         self.ffn_size = ffn_size
         self.num_layers = num_layers
         self.num_heads = num_heads
-        self.dropout = self.dropout
+        self.dropout = dropout
+        self.decoder_model = None
 
         #source layers
         source_emb = Embeddings(source_tokens.length(), model_size)
@@ -279,11 +239,11 @@ class Transformer():
         #decoder
         self.decoder = DecoderStack(target_emb, source_mask, target_mask, target_pos, num_layers, num_heads, model_size, ffn_size, dropout)
 
-        self.target_layer = TimeDistributed(Dense(target_tokens.length, activation='softmax'))
+        self.target_layer = TimeDistributed(Dense(target_tokens.length()))
 
     def compile(self, optimizer='adam'):
-        source_input = Input(shape=(self.source_len, ), dtype='int32')
-        target_input = Input(shape=(self.target_len, ), dtype='int32')
+        source_input = Input(shape=(None, ), dtype='int32')
+        target_input = Input(shape=(None, ), dtype='int32')
 
         target_true = Lambda(lambda x: x[:, 1:])(target_input)
         target_seq = Lambda(lambda x: x[:, :-1])(target_input)
@@ -295,7 +255,7 @@ class Transformer():
         def get_loss(args):
             y_pred, y_true = args
             y_true = K.cast(y_true, 'int32')
-            loss = K.sparse_categorical_crossentropy(y_true, y_pred)
+            loss = K.sparse_categorical_crossentropy(y_true, y_pred, from_logits=True)
             mask = K.cast(K.not_equal(y_true, 0), K.floatx())
             loss = K.sum(loss * mask, -1) / K.sum(mask, -1)
             loss = K.mean(loss)
@@ -310,13 +270,12 @@ class Transformer():
             corr = K.sum(corr * mask, -1) / K.sum(mask, -1)
             return K.mean(corr)
 
-        loss = Lambda(get_loss)([output, target_true])
+        loss = Lambda(get_loss, name='loss')([output, target_true])
         ppl = Lambda(K.exp)(loss)
         accu = Lambda(get_accu)([output, target_true])
 
         self.model = Model(inputs=[source_input, target_input], outputs=loss)
         self.model.add_loss([loss])
-        self.output_model = Model(inputs=[source_input, target_input], outputs=output)
 
         self.model.compile(optimizer, None)
         self.model.metrics_names.append('perplexity')
@@ -324,34 +283,45 @@ class Transformer():
         self.model.metrics_names.append('accu')
         self.model.metrics_tensors.append(accu)
 
+    def make_source_sequence_matrix(self, input_sequence):
+        source_sequence = np.zeros([1, len(input_sequence) + 3], dtype='int32')
+        source_sequence[0, 0] = self.source_tokens.start_id()
+        for i, z in enumerate(input_sequence):
+            source_sequence[0, i+1] = self.source_tokens.id(z)
+        source_sequence[0, len(input_sequence) + 1] = self.source_tokens.end_id()
+        return source_sequence
 
+    def make_decode_model(self):
+        source_input = Input(shape=(None, ), dtype='int32')
+        target_input = Input(shape=(None, ), dtype='int32')
 
-        
+        encoder_output = self.encoder(source_input)
+        self.encoder_model = Model(inputs=source_input, outputs=encoder_output)
 
+        encoder_input = Input(shape=(None, self.model_size))
+        decoder_output = self.decoder(target_input, source_input, encoder_input)
+        final_output = self.target_layer(decoder_output)
+        self.decoder_model = Model(inputs=[source_input, target_input, encoder_input], outputs=final_output)
 
-    
-def transformer(source_length, target_length, source_vocab, target_vocab, model_size, num_layers, num_heads, dropout):
-    source = Input(shape=(source_length,))
-    source_padding = Padding()(source)
-    source_mask = Masking()(source)
-    source_embedding = Embeddings(source_vocab, model_size)(source)
-    encoder_inputs = PositionEncoding()(source_embedding)
-    encoder_inputs = Dropout(dropout)(encoder_inputs)
-    encoder_output = encoder(encoder_inputs, source_padding, source_mask, num_layers, num_heads, model_size, dropout)
+        self.encoder_model.compile('adam', 'mse')
+        self.decoder_model.compile('adam', 'mse')
 
-    target = Input(shape=(target_length,))
-    target_mask = Masking(decoder_mask=True)(target)
-    target_embedding = Embeddings(target_vocab, model_size)(target)
-    target_embedding = Lambda(lambda x: K.temporal_padding(x[:, :-1, :], (1, 0)))(target_embedding)
-    decoder_inputs = PositionEncoding()(target_embedding)
-    decoder_inputs = Dropout(dropout)(decoder_inputs)
-    decoder_output = decoder(decoder_inputs, encoder_output, source_mask, target_mask, num_layers, num_heads, model_size, dropout)
+    def decode_sequence(self, input_sequence, len_limit=50):
+        if self.decoder_model is None:
+            self.make_decode_model()
+        source_sequence = self.make_source_sequence_matrix(input_sequence)
+        encoded_seq = self.encoder_model.predict_on_batch(source_sequence)
 
-    output = TimeDistributed(Dense(target_vocab, name='decoder', activation='softmax'))(decoder_output)
+        decoded_tokens = []
+        target_sequence = np.zeros([1, self.target_tokens.length()], 'int32')
+        target_sequence[0, 0] = self.target_tokens.start_id()
 
-    model = Model(inputs=[source, target], outputs=output)
-    return model
-
-if __name__ == "__main__":
-    model = transformer(15, 20, 10000, 12000, 256, 3, 8, 0.1)
-    print(model.summary())
+        for i in range(len_limit - 1):
+            output = self.decoder_model.predict_on_batch([source_sequence, target_sequence, encoded_seq])
+            index = np.argmax(output[0, i, :], -1)
+            token = self.target_tokens.token(index)
+            decoded_tokens.append(token)
+            if index == self.target_tokens.end_id():
+                break
+            target_sequence[0, i+1] = index
+        return decoded_tokens 

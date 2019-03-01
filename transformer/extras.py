@@ -4,9 +4,10 @@ from keras.layers import Layer, Embedding
 from keras.callbacks import Callback
 
 class LayerNormalization(Layer):
-    def __init__(self, axis=-1, **kwargs):
+    def __init__(self, axis=-1, epsilon=1e-6, **kwargs):
         super(LayerNormalization, self).__init__(**kwargs)
         self.axis = axis
+        self.epsilon = epsilon
 
     def build(self, input_shape):
         self.hidden_size = input_shape[-1]
@@ -22,10 +23,9 @@ class LayerNormalization(Layer):
         self.built = True
 
     def call(self, x):
-        epsilon = K.constant(1e-6, dtype=K.floatx())
         mean = K.mean(x, axis=self.axis, keepdims=True)
         variance = K.mean(K.square(x - mean), axis=self.axis, keepdims=True)
-        norm = (x - mean) / K.sqrt(variance + epsilon)
+        norm = (x - mean) / (variance + self.epsilon)
         return norm * self.scale + self.bias
 
 class Embeddings(Embedding):
@@ -42,7 +42,7 @@ class LRSchedulerPerStep(Callback):
 
     def on_batch_begin(self, batch, logs=None):
         self.step_num += 1
-        lr = self.basic * min(self.step_num**-0.5, self.step_num**self.warm)
+        lr = self.basic * min(self.step_num**-0.5, self.step_num*self.warm)
         K.set_value(self.model.optimizer.lr, lr)
 
 if __name__ == "__main__":

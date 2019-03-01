@@ -17,11 +17,9 @@ def get_position_encoding(timesteps: int, hidden_size: int, min_timescale: float
     Returns:
         Tensor with shape [timesteps, hidden_size]
     """
-    if hidden_size % 2 != 0:
-        return ValueError("Hidden size must be divisible by 2")
     position = K.arange(0, timesteps, dtype=K.floatx())
-    num_timescales = hidden_size // 2
-    log_timescale_increment = K.constant(math.log(float(max_timescale) / float(min_timescale) / (num_timescales - 1)), dtype=K.floatx())
+    num_timescales = K.cast(hidden_size // 2, K.floatx())
+    log_timescale_increment = K.log(max_timescale / min_timescale / (num_timescales - 1))
     inv_timescales = min_timescale * K.exp(K.arange(0, num_timescales, dtype=K.floatx()) * -log_timescale_increment)
     scaled_time = K.expand_dims(position, 1) * K.expand_dims(inv_timescales, 0)
     signal = K.concatenate([K.sin(scaled_time), K.cos(scaled_time)], axis=1)
@@ -36,12 +34,14 @@ class PositionEncoding(Layer):
         
     def build(self, input_shape):
         _, timesteps, hidden_size = input_shape
-        self.signal = get_position_encoding(timesteps, hidden_size, self.min_timescale, self.max_timescale)
         
         self.input_spec = InputSpec(min_ndim=3, axes={-1: hidden_size})
         self.built = True
 
     def call(self, x):
+        timesteps = K.shape(x)[1]
+        hidden_size = K.shape(x)[2]
+        self.signal = get_position_encoding(timesteps, hidden_size, self.min_timescale, self.max_timescale)
         return x + self.signal
 
     def compute_output_shape(self, input_shape):

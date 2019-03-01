@@ -14,8 +14,7 @@ def get_attention_decoder_mask(length):
         float tensor of shape [1, 1, length, length]
     """
     _NEG_INF = -1e9
-    valid_locs = np.tril(np.ones([length, length]))
-    valid_locs = K.constant(valid_locs, dtype=K.floatx())
+    valid_locs = K.tf.matrix_band_part(K.ones((length, length)), -1, 0)
     valid_locs = K.reshape(valid_locs, (1, 1, length, length))
     decoder_bias = _NEG_INF * (1.0 - valid_locs)
     return decoder_bias
@@ -29,19 +28,18 @@ class Masking(Layer):
         
     def build(self, input_shape):
         self.batch_size, self.length = input_shape
-        if self.decoder_mask:
-            self.mask = get_attention_decoder_mask(self.length)
-        
         self.input_spec = InputSpec(min_ndim=2, axes={-1: self.length})
         self.built = True
 
     def call(self, x):
         if self.decoder_mask:
+            length = K.shape(x)[1]
+            self.mask = get_attention_decoder_mask(length)
             return self.mask
         else:
             padding = K.cast(K.equal(x, self.padding), dtype=K.floatx())
             self.mask = padding * self._NEG_INF
-            self.mask = K.expand_dims(K.expand_dims(x, axis=1), axis=1)
+            self.mask = K.expand_dims(K.expand_dims(self.mask, axis=1), axis=1)
             return self.mask
 
     def compute_output_shape(self, input_shape):

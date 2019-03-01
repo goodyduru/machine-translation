@@ -2,7 +2,6 @@ from keras.layers import Layer, Dropout, Concatenate
 from keras import activations, initializers, regularizers, constraints
 from keras.engine import InputSpec
 import keras.backend as K
-import tensorflow as tf
 
 class BaseMultiHeadAttention(Layer):
     """Attention Layer"""
@@ -21,7 +20,6 @@ class BaseMultiHeadAttention(Layer):
                 ):
         if output_dim % num_heads != 0:
             raise ValueError("Hidden size must be evenly divisible by num of heads")
-        super(BaseMultiHeadAttention, self).__init__(**kwargs)
         self.output_dim = output_dim
         self.num_heads = num_heads
         self.dropout = dropout
@@ -33,16 +31,17 @@ class BaseMultiHeadAttention(Layer):
         self.activity_regularizer = regularizers.get(activity_regularizer)
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
+        super(BaseMultiHeadAttention, self).__init__(**kwargs)
 
     def build(self, input_shape):
         if not (isinstance(input_shape, list) and ( len(input_shape)  == 2 or len(input_shape) == 3 )):
             raise ValueError(
                 'You must call this layer passing a list of two or three tensors'
                 '(for keys/values and queries)')
-        if input_shape[0][-1] != input_shape[1][-1]:
+        """if input_shape[0][-1] != input_shape[1][-1]:
             raise ValueError(
                 'The inputs and outputs must be the same dimensionality' 
-            )
+            )"""
         self.batch_size, self.timesteps, self.input_dim = input_shape[0]
         self.W_q = self.add_weight(shape=(self.input_dim, self.output_dim),
                                     name='W_q',
@@ -97,6 +96,7 @@ class BaseMultiHeadAttention(Layer):
             self.input_spec = [InputSpec(min_ndim=3, axes={-1: self.input_dim}), InputSpec(min_ndim=3, axes={-1: self.input_dim}), InputSpec(min_ndim=4, axes={-1: input_shape[2][-1]})]
         self.built = True
 
+
     def split_heads(self, x):
         """ Split x into different 
         Args:
@@ -109,7 +109,7 @@ class BaseMultiHeadAttention(Layer):
         depth = self.output_dim // self.num_heads
 
         x = K.reshape(x, (batch_size, length, self.num_heads, depth))
-        output = K.permute_dimensions(x, [0, 2, 1, 3])
+        output = K.permute_dimensions(x, (0, 2, 1, 3))
         return output
 
     def combine_heads(self, x):
@@ -121,7 +121,7 @@ class BaseMultiHeadAttention(Layer):
         """
         batch_size = K.shape(x)[0]
         length = K.shape(x)[2]
-        x = K.permute_dimensions(x, [0, 2, 1, 3])
+        x = K.permute_dimensions(x, (0, 2, 1, 3))
         output = K.reshape(x, (batch_size, length, self.output_dim))
         return output
 
@@ -136,7 +136,7 @@ class BaseMultiHeadAttention(Layer):
         else:
             x, y, bias = input_tensor
         q = K.dot(x, self.W_q) + self.b_q
-        k = K.dot(y, self.W_k) + self.b_q
+        k = K.dot(y, self.W_k) + self.b_k
         v = K.dot(y, self.W_v) + self.b_v
 
         q = self.split_heads(q)
@@ -169,7 +169,8 @@ class BaseMultiHeadAttention(Layer):
     def get_config(self):
         config = {
             'num_heads': self.num_heads,
-            'output_dim': self.output_dim
+            'output_dim': self.output_dim,
+            'dropout': self.dropout
         }
         base_config = super(BaseMultiHeadAttention, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -180,7 +181,6 @@ class MultiHeadAttention(BaseMultiHeadAttention):
         super(MultiHeadAttention, self).__init__(output_dim, num_heads, **kwargs)
 
     def build(self, input_shape):
-        print(input_shape)
         super(MultiHeadAttention, self).build(input_shape)
 
     def call(self, x):
