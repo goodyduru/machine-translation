@@ -24,8 +24,8 @@ class LayerNormalization(Layer):
 
     def call(self, x):
         mean = K.mean(x, axis=self.axis, keepdims=True)
-        variance = K.mean(K.square(x - mean), axis=self.axis, keepdims=True)
-        norm = (x - mean) / (variance + self.epsilon)
+        std = K.std(x, axis=self.axis, keepdims=True)
+        norm = (x - mean) / (std + self.epsilon)
         return norm * self.scale + self.bias
 
 class Embeddings(Embedding):

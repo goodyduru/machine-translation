@@ -33,7 +33,7 @@ class PositionEncoding(Layer):
         self.max_timescale = max_timescale
         
     def build(self, input_shape):
-        _, timesteps, hidden_size = input_shape
+        _, _, hidden_size = input_shape
         
         self.input_spec = InputSpec(min_ndim=3, axes={-1: hidden_size})
         self.built = True
