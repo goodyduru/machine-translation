@@ -1,6 +1,7 @@
 from keras.layers import Dropout, Add, Input, Dense, Embedding
 from keras.layers import Activation, Lambda, TimeDistributed
 from keras.models import Model
+from keras.preprocessing.text import text_to_word_sequence
 import keras.backend as K
 import numpy as np
 from .attention import MultiHeadAttention, MultiHeadSelfAttention
@@ -286,6 +287,7 @@ class Transformer():
     def make_source_sequence_matrix(self, input_sequence):
         source_sequence = np.zeros([1, len(input_sequence) + 3], dtype='int32')
         source_sequence[0, 0] = self.source_tokens.start_id()
+        input_sequence = text_to_word_sequence(input_sequence)
         for i, z in enumerate(input_sequence):
             source_sequence[0, i+1] = self.source_tokens.id(z)
         source_sequence[0, len(input_sequence) + 1] = self.source_tokens.end_id()
@@ -324,4 +326,4 @@ class Transformer():
             if index == self.target_tokens.end_id():
                 break
             target_sequence[0, i+1] = index
-        return decoded_tokens 
+        return " ".join(decoded_tokens[:-1]) 
