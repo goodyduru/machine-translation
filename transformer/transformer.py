@@ -315,7 +315,7 @@ class Transformer():
         encoded_seq = self.encoder_model.predict_on_batch(source_sequence)
 
         decoded_tokens = []
-        target_sequence = np.zeros([1, self.target_tokens.length()], 'int32')
+        target_sequence = np.zeros([1, len_limit], 'int32')
         target_sequence[0, 0] = self.target_tokens.start_id()
 
         for i in range(len_limit - 1):
