@@ -9,4 +9,4 @@ The online dictionary dataset can be found [here](https://www.kaggle.com/goodydu
 The Jehovah Witness Bible dataset can be found [here](https://www.kaggle.com/goodyduru/english-igbo-bible).  
 
 
-The design choices I made can be found in this blog post I made [here](https://medium.com/@goodyduru/building-an-english-to-igbo-translation-project-18c239d756f9)
+The design choices I made for this project along with more information on the Machine Translation models can be found in this blog post I wrote [here](https://medium.com/@goodyduru/building-an-english-to-igbo-translation-project-18c239d756f9)
